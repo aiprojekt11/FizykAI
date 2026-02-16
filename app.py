@@ -22,7 +22,7 @@ Jesteś nauczycielem fizyki (poziom rozszerzony/studia).
 """
 
 def get_gemini_response(text, img):
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-1.5-flash')
     parts = [SYSTEM_PROMPT]
     if text: parts.append(text)
     if img: parts.append(img)
