@@ -2,51 +2,43 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 
-# --- DIAGNOSTYKA (To nam powie prawdę) ---
-import pkg_resources
-try:
-    ver = pkg_resources.get_distribution("google-generativeai").version
-except:
-    ver = "Nieznana"
-
-# --- KONFIGURACJA ---
+# --- KONFIGURACJA STRONY ---
 st.set_page_config(page_title="FizykAI", page_icon="⚛️")
-st.title("⚛️ FizykAI - Twój Tutor")
-st.caption(f"Status systemu: Biblioteka Google wersja {ver} (Wymagana: 0.8.3)")
 
 # --- KLUCZ API ---
 try:
-    # Pobieramy klucz
     api_key = st.secrets["GOOGLE_API_KEY"]
-    # Konfiguracja
     genai.configure(api_key=api_key)
 except Exception as e:
-    st.error(f"Problem z kluczem: {e}")
+    st.error("⚠️ Brak klucza API w Secrets.")
 
-# --- MÓZG ---
+# --- MÓZG (Logika) ---
 def get_gemini_response(text, img):
-    # Używamy najnowszego modelu
+    # Model Flash jest najszybszy i najtańszy/darmowy
     model = genai.GenerativeModel('gemini-1.5-flash')
     
     parts = []
+    # System Prompt (Instrukcja)
+    parts.append("Jesteś nauczycielem fizyki. Rozwiązuj zadania krok po kroku (Dane, Szukane, Wzór).")
+    
     if text: parts.append(text)
     if img: parts.append(img)
-    
-    # Prosty prompt na start
-    parts.append("Rozwiąż to zadanie z fizyki krok po kroku. Używaj LaTeX.")
     
     response = model.generate_content(parts)
     return response.text
 
-# --- INTERFEJS ---
-text = st.text_area("Treść zadania:")
+# --- WYGLĄD ---
+st.title("⚛️ FizykAI - Twój Tutor")
+st.info("Wersja Stabilna: Gemini 1.5 Flash")
+
+text = st.text_area("Treść zadania:", height=100)
 file = st.file_uploader("Zdjęcie (opcjonalnie):", type=["jpg", "png", "jpeg"])
 
 if st.button("🚀 Rozwiąż"):
     if not api_key:
-        st.error("BRAK KLUCZA API W SEKRETACH!")
+        st.error("Najpierw ustaw klucz API w ustawieniach!")
     else:
-        with st.spinner("Liczenie..."):
+        with st.spinner("Analizuję fizykę..."):
             try:
                 img = Image.open(file) if file else None
                 if img: st.image(img, caption="Twoje zdjęcie")
@@ -56,5 +48,4 @@ if st.button("🚀 Rozwiąż"):
                 st.markdown("### Rozwiązanie:")
                 st.markdown(response)
             except Exception as e:
-                st.error(f"BŁĄD KRYTYCZNY: {e}")
-                st.info("Jeśli widzisz błąd 404, sprawdź czy klucz API nie ma spacji na początku lub końcu!")
+                st.error(f"Wystąpił błąd: {e}")
