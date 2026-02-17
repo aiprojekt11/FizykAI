@@ -12,8 +12,8 @@ st.markdown("""
     footer {visibility: hidden;} 
     header {visibility: hidden;}
     .stApp {margin-top: -50px;}
-    /* Powiększamy czcionkę wzorów dla lepszej czytelności */
-    .katex { font-size: 1.2em !important; }
+    /* Powiększamy i centrujemy wzory matematyczne */
+    .katex-display { margin: 1em 0; font-size: 1.3em; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -37,39 +37,36 @@ def execute_hidden_code(code_str):
         sys.stdout = sys.__stdout__
 
 # --- MÓZG (GEMINI 2.5 FLASH) ---
-def get_visual_response(text, img):
+def get_clean_response(text, img):
     model = genai.GenerativeModel('gemini-2.5-flash')
     
-    # SYSTEM PROMPT: FORMAT BLOKOWY (WIZUALNA SEPARACJA)
+    # SYSTEM PROMPT: ZAKAZ HTML
     system_prompt = """
-    Jesteś nauczycielem fizyki. Twoim priorytetem jest CZYTELNOŚĆ.
-    Uczeń musi widzieć różnicę między słowem a liczbą.
+    Jesteś nauczycielem fizyki. Twoim priorytetem jest CZYTELNOŚĆ i PROSTOTA.
     
-    ZASADA GŁÓWNA:
-    Każdy wzór matematyczny i każde podstawienie liczb MUSI być w osobnej linii, wyśrodkowane (używaj podwójnego dolara: $$ ... $$).
+    ZASADY ABSOLUTNE (BŁĘDY KRYTYCZNE):
+    1. ZAKAZ UŻYWANIA HTML: Nie wolno Ci pisać <div>, <span>, <br> ani żadnych stylów CSS. To psuje wyświetlanie!
+    2. ZAKAZ RAMEK: Nie próbuj robić ramek wokół wyniku.
     
-    STRUKTURA ODPOWIEDZI (Krok po kroku):
+    WYMAGANY FORMAT (WIZUALNA SEPARACJA):
     
-    1. **Dane i Szukane**
-       Wypisz je krótko od myślników.
+    1. **Dane:** Wypisz je od myślników.
+    
+    2. **Krok [Numer]: [Tytuł]**
+       Napisz jedno zdanie wyjaśnienia.
+       Dopiero W NOWEJ LINII wstaw wzór w bloku LaTeX (podwójny dolar):
        
-    2. **Krok 1: [Nazwa]**
-       Napisz 1 zdanie wyjaśnienia po polsku (np. "Liczymy siłę wypadkową").
-       Dopiero POD SPODEM wstaw blok matematyczny ze wzorem:
-       $$ F = m \\cdot a $$
-       I pod spodem podstawienie:
-       $$ F = 10 \\cdot 5 $$
+       $$ WZÓR $$
        
-    3. **Krok 2: [Nazwa]**
-       Znowu tekst wyjaśnienia.
-       I znowu blok matematyczny pod spodem.
+       A pod nim podstawienie liczb:
        
-    4. **Wynik**
-       Na końcu podaj wynik w ramce lub pogrubiony.
+       $$ PODSTAWIENIE $$
+       
+    3. **Wynik**
+       Napisz słowo "Wynik:", a potem w nowej linii samą wartość w LaTeX:
+       $$ WYNIK $$
     
-    WAŻNE:
-    - Wszystkie obliczenia wykonuj w ukrytym bloku ```python ... ``` (dla poprawności), ale w tekście pokazuj tylko gotowe liczby.
-    - Nie zlewaj tekstu ze wzorami. Wzór ma być królem ekranu.
+    Wszystkie obliczenia wykonuj w ukrytym bloku ```python ... ```, ale uczniowi pokazuj tylko czyste liczby w LaTeX.
     """
     
     parts = [system_prompt]
@@ -87,13 +84,13 @@ with col1:
 with col2:
     file = st.file_uploader("📷", type=["jpg", "png"], label_visibility="collapsed")
 
-if st.button("Rozwiąż czytelnie 👁️", type="primary", use_container_width=True):
+if st.button("Rozwiąż 👁️", type="primary", use_container_width=True):
     if task or file:
-        with st.spinner("Rozpisuję wzory..."):
+        with st.spinner("Analizuję..."):
             img = Image.open(file) if file else None
             
             try:
-                full_response = get_visual_response(task, img)
+                full_response = get_clean_response(task, img)
                 
                 # Logika ukrywania kodu Python
                 if "```python" in full_response:
@@ -102,10 +99,10 @@ if st.button("Rozwiąż czytelnie 👁️", type="primary", use_container_width=
                     code_part = parts[1].split("```")[0]
                     text_after = parts[1].split("```")[1] if len(parts[1].split("```")) > 1 else ""
                     
-                    # Uruchamiamy Python w tle (dla pewności wyniku)
+                    # Uruchamiamy Python w tle (dla pewności)
                     execute_hidden_code(code_part)
                     
-                    # Wyświetlamy tekst (Streamlit sam sformatuje $$...$$ jako blok centralny)
+                    # Wyświetlamy tekst
                     st.markdown(visible_text + text_after)
                 else:
                     st.markdown(full_response)
