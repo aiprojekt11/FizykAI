@@ -2,6 +2,9 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 
+streamlit
+google-generativeai==0.8.3
+pillow
 # --- KONFIGURACJA STRONY ---
 st.set_page_config(page_title="FizykAI", page_icon="⚛️")
 
