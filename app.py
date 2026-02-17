@@ -1,35 +1,50 @@
 import streamlit as st
 import google.generativeai as genai
+from PIL import Image
 
-st.title("🔍 Skaner Modeli Google")
+# --- KONFIGURACJA ---
+st.set_page_config(page_title="FizykAI", page_icon="⚛️")
+st.title("⚛️ FizykAI - Twój Tutor")
+st.caption("Powered by Gemini 2.5 Flash")  # Zaktualizowałem podpis
 
-# 1. Konfiguracja
+# --- KLUCZ API ---
 try:
     api_key = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
-    st.success("✅ Klucz API działa!")
 except Exception as e:
-    st.error(f"Błąd klucza: {e}")
+    st.error("⚠️ Brak klucza API w Secrets.")
 
-# 2. Pobieranie listy modeli
-if st.button("Pokaż dostępne modele"):
-    try:
-        st.info("Pytam serwery Google o listę...")
-        
-        # To jest ta funkcja, o którą prosił błąd
-        models_iterator = genai.list_models()
-        
-        found_any = False
-        st.write("### Twoja lista modeli:")
-        
-        for m in models_iterator:
-            # Szukamy tylko modeli, które umieją pisać tekst (generateContent)
-            if 'generateContent' in m.supported_generation_methods:
-                st.code(f"Nazwa: {m.name}")
-                found_any = True
+# --- MÓZG (GEMINI 2.5) ---
+def get_gemini_response(text, img):
+    # TUTAJ JEST KLUCZOWA ZMIANA - używamy modelu z Twojej listy
+    model = genai.GenerativeModel('gemini-2.5-flash')
+    
+    parts = []
+    # System Prompt (Instrukcja)
+    parts.append("Jesteś nauczycielem fizyki. Rozwiązuj zadania krok po kroku: DANE, SZUKANE, WZÓR, OBLICZENIA, WYNIK. Używaj LaTeX do wzorów.")
+    
+    if text: parts.append(text)
+    if img: parts.append(img)
+    
+    response = model.generate_content(parts)
+    return response.text
+
+# --- INTERFEJS ---
+text = st.text_area("Treść zadania:", height=100)
+file = st.file_uploader("Zdjęcie (opcjonalnie):", type=["jpg", "png", "jpeg"])
+
+if st.button("🚀 Rozwiąż"):
+    if not api_key:
+        st.error("Najpierw ustaw klucz API w ustawieniach!")
+    else:
+        with st.spinner("Gemini 2.5 myśli..."):
+            try:
+                img = Image.open(file) if file else None
+                if img: st.image(img, caption="Twoje zdjęcie", width=300)
                 
-        if not found_any:
-            st.warning("Połączono, ale lista modeli jest pusta. To może być problem z uprawnieniami klucza.")
-            
-    except Exception as e:
-        st.error(f"Błąd podczas pobierania listy: {e}")
+                response = get_gemini_response(text, img)
+                
+                st.markdown("### Rozwiązanie:")
+                st.markdown(response)
+            except Exception as e:
+                st.error(f"Wystąpił błąd: {e}")
