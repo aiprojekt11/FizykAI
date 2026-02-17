@@ -2,51 +2,49 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 
-
-# --- KONFIGURACJA STRONY ---
-st.set_page_config(page_title="FizykAI", page_icon="⚛️")
+st.set_page_config(page_title="FizykAI - Gemini Edition")
 
 # --- KLUCZ API ---
 try:
     api_key = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
-except Exception as e:
-    st.error("⚠️ Brak klucza API w Secrets.")
+except:
+    st.error("Ustaw GOOGLE_API_KEY w Secrets.")
 
-# --- MÓZG (Logika) ---
+# --- MÓZG (Z LISTĄ REZERWOWĄ MODELI) ---
 def get_gemini_response(text, img):
-    # Model Flash jest najszybszy i najtańszy/darmowy
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # Próbujemy kolejno dostępnych modeli (od najnowszych do stabilnych)
+    models_to_try = [
+        'gemini-3-flash-preview', 
+        'gemini-2.5-flash', 
+        'gemini-2.0-flash', 
+        'gemini-1.5-flash'
+    ]
     
-    parts = []
-    # System Prompt (Instrukcja)
-    parts.append("Jesteś nauczycielem fizyki. Rozwiązuj zadania krok po kroku (Dane, Szukane, Wzór).")
-    
-    if text: parts.append(text)
-    if img: parts.append(img)
-    
-    response = model.generate_content(parts)
-    return response.text
+    last_error = ""
+    for model_name in models_to_try:
+        try:
+            model = genai.GenerativeModel(model_name)
+            parts = ["Jesteś nauczycielem fizyki. Rozwiązuj zadania krok po kroku.", text]
+            if img: parts.append(img)
+            
+            response = model.generate_content(parts)
+            return response.text, model_name
+        except Exception as e:
+            last_error = str(e)
+            continue # Próbuj kolejny model z listy
+            
+    return f"Błąd: Żaden model nie odpowiedział. Ostatni błąd: {last_error}", None
 
-# --- WYGLĄD ---
-st.title("⚛️ FizykAI - Twój Tutor")
-st.info("Wersja Stabilna: Gemini 1.5 Flash")
-
-text = st.text_area("Treść zadania:", height=100)
-file = st.file_uploader("Zdjęcie (opcjonalnie):", type=["jpg", "png", "jpeg"])
+# --- INTERFEJS ---
+st.title("⚛️ FizykAI - Wersja Gemini")
+user_text = st.text_area("Treść zadania:")
+file = st.file_uploader("Zdjęcie:", type=["jpg", "png", "jpeg"])
 
 if st.button("🚀 Rozwiąż"):
-    if not api_key:
-        st.error("Najpierw ustaw klucz API w ustawieniach!")
-    else:
-        with st.spinner("Analizuję fizykę..."):
-            try:
-                img = Image.open(file) if file else None
-                if img: st.image(img, caption="Twoje zdjęcie")
-                
-                response = get_gemini_response(text, img)
-                
-                st.markdown("### Rozwiązanie:")
-                st.markdown(response)
-            except Exception as e:
-                st.error(f"Wystąpił błąd: {e}")
+    with st.spinner("Szukam aktywnego modelu Gemini..."):
+        img = Image.open(file) if file else None
+        res, used_model = get_gemini_response(user_text, img)
+        if used_model:
+            st.success(f"Użyto modelu: {used_model}")
+        st.markdown(res)
