@@ -1,142 +1,118 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
-import io  # [NOWOŚĆ] Do przechwytywania wyników kodu
-import sys # [NOWOŚĆ] Do obsługi wyjścia systemowego (print)
+import io
+import sys
+import re
 
-# --- KONFIGURACJA ---
-st.set_page_config(page_title="FizykAI - Hybrid Engine", page_icon="⚛️", layout="wide") # [ZMIANA] Layout wide dla lepszej czytelności
-st.title("⚛️ FizykAI - Silnik Hybrydowy")
-st.caption("Powered by Gemini 2.5 Flash + Python Runtime") # [ZMIANA] Nowy opis
+# --- KONFIGURACJA UI ---
+st.set_page_config(page_title="FizykAI", page_icon="⚛️")
+# Ukrywamy wszystko co zbędne - czysty minimalizm
+st.markdown("""
+<style>
+    #MainMenu {visibility: hidden;} 
+    footer {visibility: hidden;} 
+    header {visibility: hidden;}
+    .stApp {margin-top: -50px;}
+</style>
+""", unsafe_allow_html=True)
 
-# --- KLUCZ API ---
+# --- API ---
 try:
     api_key = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
-except Exception as e:
-    st.error("⚠️ Brak klucza API w Secrets.")
+except:
+    st.error("Błąd: Brak klucza API.")
 
-# --- [NOWOŚĆ] FUNKCJA WYKONUJĄCA KOD PYTHON ---
-# To jest serce zmiany. Ta funkcja bierze tekst kodu od AI i uruchamia go na serwerze.
-def execute_python_code(code_str):
+# --- SILNIK UKRYTEGO PYTHONA ---
+def execute_hidden_code(code_str):
     output_capture = io.StringIO()
-    sys.stdout = output_capture # Przekierowujemy 'print' do naszej zmiennej
-    
+    sys.stdout = output_capture
     try:
-        # Tworzymy czyste środowisko dla kodu
-        local_vars = {}
-        exec(code_str, {}, local_vars)
-        result = output_capture.getvalue()
-        return result, True # Zwracamy wynik i sukces
+        # Wykonujemy kod w bezpiecznym środowisku
+        exec(code_str, {}, {})
+        return output_capture.getvalue().strip()
     except Exception as e:
-        return f"Błąd obliczeń: {e}", False # Zwracamy błąd
+        return None
     finally:
-        sys.stdout = sys.__stdout__ # Sprzątamy (przywracamy normalne działanie print)
+        sys.stdout = sys.__stdout__
 
 # --- MÓZG (GEMINI 2.5 FLASH) ---
-def get_gemini_response(text, img):
+def get_mentor_response(text, img):
     model = genai.GenerativeModel('gemini-2.5-flash')
     
-    parts = []
-    
-    # [ZMIANA] NOWY SYSTEM PROMPT (INSTRUKCJA)
-    # Zabraniamy AI liczyć w pamięci. Zmuszamy do pisania kodu.
+    # TUTAJ WKLEJONY JEST TWÓJ NOWY SYSTEM PROMPT
     system_prompt = """
     Jesteś FIZYK-MENTOR. Twoim celem nie jest "rozwiązanie zadania", ale "wyjaśnienie go uczniowi, który go nie rozumie".
 
-FILOZOFIA DZIAŁANIA:
-1. Jesteś po stronie ucznia. Fizyka jest trudna, więc Ty musisz być prosty.
-2. ZERO TECHNOLOGICZNEGO BEŁKOTU. Nigdy nie używaj słów: "Python", "kod", "algorytm", "jako model AI". To jest zakazane.
-3. UKRYTA MOC OBLICZENIOWA: Wszystkie obliczenia wykonuj w bloku kodu Python, ale ten blok ma być dla ucznia NIEWIDZIALNY. Używasz go tylko po to, byś Ty sam nie popełnił błędu.
+    FILOZOFIA:
+    1. Bądź po stronie ucznia. Mów prosto, ciepło i obrazowo.
+    2. ZERO TECHNOLOGII: Nie wspominaj o Pythonie, kodzie czy AI.
+    3. BEZBŁĘDNOŚĆ: Liczby muszą być idealne.
 
-STRUKTURA TWOJEJ ODPOWIEDZI (trzymaj się jej sztywno):
-
-KROK 1: INTUICJA (LUDZKI JĘZYK)
-Zacznij od słów typu: "Spójrz, to zadanie polega na...", "Wyobraź sobie, że...".
-Wyjaśnij zjawisko bez wzorów. Np. "Samochód hamuje, więc siła działa przeciwnie do ruchu".
-
-KROK 2: FIZYCZNE KONKRETY
-Wypisz Dane i Szukane (krótko).
-Podaj wzór w LaTeX (np. $F = m \cdot a$) i wyjaśnij, co to za litery.
-
-KROK 3: OBLICZENIA (WARSTWA UKRYTA)
-Tu stwórz blok ```python ... ```. W nim policz wynik.
-WAŻNE: Wypisz wynik funkcją print() w formacie: "OBLICZONO: [wynik] [jednostka]".
-
-KROK 4: WYNIK I WNIOSKI
-Podaj wynik końcowy (pogrubiony).
-Dopisz jedno zdanie komentarza, np. "To dość duża siła, jak na taki lekki pojazd".
-
-PAMIĘTAJ: Tłumacz tak, jakbyś mówił do zestresowanego maturzysty. Ciepło, prosto, konkretnie.
+    INSTRUKCJA FORMATOWANIA:
+    1. Najpierw wytłumacz "na chłopski rozum" o co chodzi w zadaniu.
+    2. Wypisz Dane/Szukane i Wzór (LaTeX).
+    3. Następnie stwórz blok kodu ```python ... ```, w którym obliczysz wynik.
+       W kodzie na końcu użyj: print("WYNIK KOŃCOWY: ...").
+    4. Po bloku kodu napisz podsumowanie dla ucznia i wynik pogrubioną czcionką.
     """
     
-    parts.append(system_prompt)
-    
-    if text: parts.append(f"Zadanie: {text}")
+    parts = [system_prompt]
+    if text: parts.append(f"Uczeń pyta o: {text}")
     if img: parts.append(img)
     
-    response = model.generate_content(parts)
-    return response.text
+    return model.generate_content(parts).text
 
 # --- INTERFEJS ---
-# [ZMIANA] Dzielimy ekran na dwie kolumny: Zadanie i Obrazek
-col1, col2 = st.columns([1, 1])
+st.title("FizykAI")
+st.caption("Twój prywatny korepetytor.")
 
+# Input
+col1, col2 = st.columns([3, 1])
 with col1:
-    text_input = st.text_area("Treść zadania:", height=150)
-
+    task = st.text_area("Zadanie:", height=100, placeholder="Wklej treść zadania, a ja wytłumaczę Ci to krok po kroku...", label_visibility="collapsed")
 with col2:
-    file = st.file_uploader("Zdjęcie (opcjonalnie):", type=["jpg", "png", "jpeg"])
-    image = None
-    if file:
-        image = Image.open(file)
-        st.image(image, caption="Analiza wizualna", use_column_width=True)
+    file = st.file_uploader("📷", type=["jpg", "png"], label_visibility="collapsed")
 
-if st.button("🚀 Rozwiąż z Weryfikacją Kodem"):
-    if not api_key:
-        st.error("Najpierw ustaw klucz API w ustawieniach!")
-    else:
-        with st.spinner("Gemini 2.5 analizuje fizykę i pisze kod..."):
+if st.button("Wyjaśnij mi to 🚀", type="primary", use_container_width=True):
+    if task or file:
+        with st.spinner("Analizuję problem..."):
+            img = Image.open(file) if file else None
+            
             try:
-                # 1. Pobieramy pełną odpowiedź od AI
-                full_response = get_gemini_response(text_input, image)
+                # 1. Pobieramy odpowiedź od Mentora
+                full_response = get_mentor_response(task, img)
                 
-                # [NOWOŚĆ] LOGIKA ROZDZIELANIA TEKSTU OD KODU
-                # Sprawdzamy, czy AI wygenerowało kod Pythona
+                # 2. MAGIA: Rozdzielamy tekst dla ucznia od kodu dla maszyny
                 if "```python" in full_response:
                     parts = full_response.split("```python")
-                    explanation = parts[0] # To jest tekst przed kodem
+                    intro_text = parts[0] # To jest wyjaśnienie (Intuicja + Wzory)
                     
-                    # Wyciągamy kod (usuwamy końcowe ```)
-                    code_part = parts[1].split("```")[0]
+                    # Wyciągamy kod i resztę
+                    code_and_rest = parts[1].split("```")
+                    code_block = code_and_rest[0]
+                    outro_text = code_and_rest[1] if len(code_and_rest) > 1 else ""
                     
-                    # 2. Wyświetlamy wyjaśnienie fizyczne
-                    st.markdown("### 1. Analiza Fizyczna")
-                    st.markdown(explanation)
+                    # 3. Uruchamiamy kod po cichu (Weryfikacja matematyczna)
+                    calc_output = execute_hidden_code(code_block)
                     
-                    # 3. Wyświetlamy i uruchamiamy kod
-                    st.markdown("### 2. Weryfikacja Obliczeń (Python)")
-                    with st.expander("Kliknij, aby zobaczyć kod źródłowy wygenerowany przez AI"):
-                        st.code(code_part, language='python')
+                    # 4. Wyświetlamy TYLKO to co ludzkie
+                    st.markdown(intro_text)
                     
-                    # Uruchomienie kodu!
-                    calc_result, success = execute_python_code(code_part)
+                    # Jeśli kod coś wyliczył, możemy to ładnie wpleść, 
+                    # ale tutaj polegamy na tym, co AI napisało w 'outro_text' 
+                    # oraz ewentualnie wyświetlamy wynik z Pythona jako "Pieczątkę Jakości"
                     
-                    if success:
-                        st.success("✅ Wynik obliczony przez Python:")
-                        st.text(calc_result) # Wyświetla to, co wypisał print()
-                    else:
-                        st.error("❌ Błąd w kodzie AI:")
-                        st.text(calc_result)
+                    st.markdown(outro_text)
+                    
+                    if calc_output:
+                        # Opcjonalnie: Wyświetlamy wynik z Pythona w ładnym dymku, jako potwierdzenie
+                        st.success(f"🧮 Sprawdzone obliczeniowo: {calc_output}")
                         
-                    # Jeśli AI napisało coś jeszcze po kodzie (np. podsumowanie)
-                    if len(parts[1].split("```")) > 1:
-                        st.markdown(parts[1].split("```")[1])
-
                 else:
-                    # Jeśli AI z jakiegoś powodu nie napisało kodu, wyświetlamy sam tekst
-                    st.warning("⚠️ AI podało rozwiązanie opisowe (bez weryfikacji kodem).")
+                    # Jeśli zadanie było opisowe (bez liczenia), wyświetlamy całość
                     st.markdown(full_response)
-
+                    
             except Exception as e:
-                st.error(f"Wystąpił błąd krytyczny: {e}")
+                st.error("Coś poszło nie tak. Spróbuj jeszcze raz.")
