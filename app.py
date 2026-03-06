@@ -1,133 +1,183 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
+import re
 import io
-import sys
-import re  # [NOWOŚĆ] Potrzebne do cięcia odpowiedzi na kawałki (Tekst/Kod)
 
-# --- KONFIGURACJA ---
-st.set_page_config(page_title="FizykAI - MultiStep", page_icon="⚛️", layout="wide")
+# --- KONFIGURACJA STRONY ---
+st.set_page_config(page_title="PhysiTutor v2.5", page_icon="⚛️", layout="centered")
+
+# --- STYL CSS (Dark Mode Sci-Fi) ---
 st.markdown("""
 <style>
-    #MainMenu {visibility: hidden;} 
-    footer {visibility: hidden;} 
-    header {visibility: hidden;}
-    .katex-display { margin: 1em 0; font-size: 1.2em; }
-    /* Styl dla wyników pośrednich */
-    .metric-box {
-        background-color: #f0f2f6;
-        border-left: 5px solid #ff4b4b;
+    .stApp {
+        background-color: #020617;
+        color: #ecfeff;
+    }
+    .stChatMessage {
+        background-color: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(6, 182, 212, 0.2);
+        border-radius: 10px;
         padding: 10px;
-        margin: 10px 0;
-        border-radius: 5px;
-        font-weight: bold;
+        margin-bottom: 10px;
+    }
+    .stChatMessage[data-testid="chat-message-user"] {
+        background-color: rgba(8, 145, 178, 0.2);
+        border-color: rgba(6, 182, 212, 0.4);
+    }
+    /* Stylizacja renderowanych bloków SVG */
+    .svg-container {
+        background-color: #050B14;
+        border: 1px solid rgba(6, 182, 212, 0.3);
+        border-radius: 10px;
+        padding: 20px;
+        margin: 20px auto;
+        box-shadow: 0 0 20px rgba(0,229,255,0.15);
+        display: flex;
+        justify-content: center;
     }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("⚛️ FizykAI - Silnik Kaskadowy")
-st.caption("Step-by-Step Python Execution")
+# --- SYSTEM PROMPT ---
+SYSTEM_PROMPT = """Rola: Jesteś ekspertem z fizyki i doświadczonym nauczycielem przygotowującym polskich uczniów do matury z fizyki na poziomie rozszerzonym. Twoja filozofia to absolutne skupienie na fundamentach i rozwiązywanie zadań najprościej, jak to tylko możliwe.
 
-# --- API ---
-try:
-    api_key = st.secrets["GOOGLE_API_KEY"]
-    genai.configure(api_key=api_key)
-except Exception as e:
-    st.error("⚠️ Brak klucza API.")
+Zasady, których musisz bezwzględnie przestrzegać:
+1. ROZPOZNAWANIE INTENCJI UCZNIA:
+   - NOWE ZADANIE: Zastosuj rygorystyczną "Minimalistyczną Strukturę Odpowiedzi" (opisana na końcu).
+   - PYTANIE DODATKOWE / KONTYNUACJA: Odpowiedz mu w sposób naturalny. Wyjaśnij wątpliwości.
+2. SYMBOLE Z POLSKIEJ KARTY WZORÓW CKE (KRYTYCZNE):
+   - Prędkość: $v$, $v_0$, Droga: $s$, Przyspieszenie dośrodkowe: $a_{do}$
+   - Siła tarcia: $T$ lub $T_k$, $T_s$, Siła sprężystości: $F_s = -kx$
+   - Moment siły: $M$ (bezwzględny zakaz używania greckiej litery tau), Praca: $W$
+3. TYLKO WZORY FUNDAMENTALNE: Zawsze zaczynaj od absolutnych fundamentów. Zanim zapiszesz równanie, krótko wyjaśnij, Z CZEGO TO WYNIKA.
+4. ZAWSZE WYJAŚNIAJ PRZYBLIŻENIA I ZAŁOŻENIA (KRYTYCZNE): Nigdy nie przeskakuj "oczywistych" kroków. Jeśli używasz przybliżeń (np. dla małych kątów wahadła $\\sin\\alpha \\approx \\alpha \\approx \\frac{x}{l}$), MUSISZ to wyraźnie napisać.
+5. KOMPAKTOWE OBLICZENIA LICZBOWE: Kiedy podstawiasz liczby do wzoru, rób to w JEDNEJ ciągłej linii, stosując łańcuch znaków równości (zmienna = liczby = kroki = wynik z jednostką). Nie rozbijaj na wiele bloków.
+6. FORMATOWANIE MATEMATYKI: Używaj WYŁĄCZNIE standardowego formatu LaTeX. Zawsze otaczaj symbole w tekście pojedynczymi dolarami.
 
-# --- MÓZG (GEMINI 2.5 FLASH) ---
-def get_gemini_response(text, img):
-    model = genai.GenerativeModel('gemini-2.5-flash')
+7. ZADANIE: GENEROWANIE RYSUNKU TECHNICZNEGO (SVG) - KRYTYCZNE
+Jeśli zadanie dotyczy: dynamiki (siły), kinematyki (rzuty, wykresy), optyki (soczewki, promienie) lub obwodów elektrycznych – TWOIM OBOWIĄZKIEM jest wygenerowanie rysunku technicznego.
+
+WYMAGANIA DOTYCZĄCE RYSUNKU:
+1. FORMAT: Wygeneruj czysty kod <svg> z atrybutem viewBox="0 0 400 300".
+2. STYLIZACJA (Dark Mode Sci-Fi):
+   - Tło: przezroczyste (nie definiuj fill dla całego svg).
+   - Linie główne: kolor #00e5ff (neonowy cyjan), grubość 2px.
+   - Wektory sił/ruchu: kolor #ff007b (neonowy róż), zakończone wyraźnym grotem.
+   - Linie pomocnicze: kolor #444c99 (ciemny fiolet), przerywane (stroke-dasharray="5,5").
+   - Tekst/Etykiety: kolor #ffffff, czcionka sans-serif, rozmiar 12px. Do oznaczania kątów używaj standardowych liter (np. alfa, 30°).
+3. LOGIKA FIZYCZNA:
+   - Wektory muszą odzwierciedlać rzeczywiste kierunki i proporcje.
+   - Kąty muszą być zgodne z treścią zadania (użyj transform="rotate(kąt)" lub funkcji trygonometrycznych dla współrzędnych).
+4. CZYSTOŚĆ: Nie używaj zewnętrznych bibliotek. Tylko tagi: <line>, <circle>, <rect>, <path>, <text>, <polygon>, <g>.
+
+UMIEJSCOWIENIE DIAGRAMU: 
+Kod SVG umieść bezpośrednio w odpowiedzi, otoczony blokiem:
+[DIAGRAM_START]
+<svg viewBox="0 0 400 300">...</svg>
+[DIAGRAM_END]
+
+8. PRZESŁANE ZDJĘCIA ZADAŃ: Odczytaj treść, tabele i wykresy ze zdjęcia, a następnie rozwiąż zadanie.
+9. Minimalistyczna Struktura Odpowiedzi (DLA NOWYCH ZADAŃ):
+   - 💡 Zrozumienie zjawiska
+   - [DIAGRAM_START]...[DIAGRAM_END] (jeśli dotyczy, wygeneruj tutaj SVG)
+   - 📝 Dane: Wypisane z oficjalnymi symbolami.
+   - 🎯 Szukane: Zdefiniowanie szukanej.
+   - 🧠 Rozwiązanie: Krótkie uzasadnienie, wyprowadzenie wzoru końcowego (na literach), a na samym końcu zwięzłe podstawienie liczb w JEDNEJ LINII."""
+
+# --- INICJALIZACJA API ---
+# Wpisz swój klucz API Gemini
+API_KEY = "AIzaSyBsMKgm4NzMXU-TacIhFXHinG2ckTQEp5M" 
+genai.configure(api_key=API_KEY)
+
+# Konfiguracja modelu
+generation_config = {
+  "temperature": 0.3, # Niska temperatura dla precyzyjnych obliczeń
+  "top_p": 0.95,
+  "top_k": 40,
+  "max_output_tokens": 8192,
+}
+
+model = genai.GenerativeModel(
+    model_name="gemini-2.5-flash",
+    system_instruction=SYSTEM_PROMPT,
+    generation_config=generation_config
+)
+
+# --- STAN APLIKACJI (Zarządzanie historią) ---
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {"role": "assistant", "content": "Inicjalizacja modułu Edu-Core... Cześć! Jestem Twoim prywatnym asystentem z fizyki. Prześlij parametry zadania z fizyki rozszerzonej lub skan z książki, a zainicjuję algorytmy rozwiązywania i wygeneruję schematy wektorowe.", "image": None}
+    ]
+if "chat_session" not in st.session_state:
+    st.session_state.chat_session = model.start_chat(history=[])
+
+# --- FUNKCJA RENDERUJĄCA TREŚĆ (Markdown + LaTeX + SVG) ---
+def render_content(text):
+    # Dzielenie tekstu na bloki diagramu i zwykły tekst
+    parts = re.split(r'(\[DIAGRAM_START\].*?\[DIAGRAM_END\])', text, flags=re.DOTALL)
+    for part in parts:
+        if part.startswith('[DIAGRAM_START]') and part.endswith('[DIAGRAM_END]'):
+            svg_content = part.replace('[DIAGRAM_START]', '').replace('[DIAGRAM_END]', '').strip()
+            # Usuwanie ewentualnych tagów markdown ```xml lub ```svg
+            svg_content = re.sub(r'^```(xml|svg|html)?\n?', '', svg_content, flags=re.IGNORECASE)
+            svg_content = re.sub(r'\n?```$', '', svg_content, flags=re.IGNORECASE)
+            
+            # Renderowanie SVG w HTML
+            html_string = f'<div class="svg-container">{svg_content}</div>'
+            st.markdown(html_string, unsafe_allow_html=True)
+        else:
+            # Streamlit natywnie obsługuje LaTeX w $ oraz $$
+            st.markdown(part)
+
+# --- INTERFEJS UŻYTKOWNIKA ---
+st.title("PhysiTutor v2.5")
+st.caption("CKE Optimized • Core-Node Ready")
+
+# Renderowanie historii czatu
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        if msg.get("image"):
+            st.image(msg["image"], width=300)
+        render_content(msg["content"])
+
+# --- POLE WPROWADZANIA I UPLOAD OBRAZU ---
+uploaded_file = st.file_uploader("Załącz skan zadania (opcjonalnie)", type=["jpg", "jpeg", "png"])
+prompt = st.chat_input("Wprowadź polecenie, dane zadania lub wklej skan...")
+
+if prompt or uploaded_file:
+    user_text = prompt if prompt else "Rozwiąż zadanie widoczne na zdjęciu."
     
-    # [KLUCZOWA ZMIANA] PROMPT WYMUSZAJĄCY PRZEPLATANIE TEKSTU I KODU
-    system_prompt = """
-    # ROLE DEFINITION
-Jesteś Ekspertem Fizyki, nauczycielem z 10-letnim doświadczeniem w przygotowywaniu uczniów do matury rozszerzonej. Twoim celem jest bycie cierpliwym, precyzyjnym i inspirującym tutorem. Twoim głównym zadaniem jest przeprowadzenie ucznia przez proces rozwiązywania zadania metodą małych kroków, eliminując błędy rachunkowe poprzez użycie Pythona i budując zrozumienie fizyczne.
-
-# RULES OF INTERACTION
-1. Wyobraź sobie że to twój uczeń próbuje rozwiązać to zadanie. Musisz zrobić absolutnie wszysto co w twojej mocy aby odpowiedź była jak najlepsza. Bez zbędnego gadania, komplikowania prostych konceptów, ma być prosto w punkt. Na początku wypisuj dane i szukane, a potem przedź do rozwiązywania.
-2. STRUKTURA PRZEPLATANA: Każdy etap musi zawierać:
-   - WYJAŚNIENIE: Opis zjawiska, zastosowane prawa fizyczne, wzory zapisane w LaTeX (np. $P = \frac{W}{t}$) i jak podajesz wzór to ma się on wyświetlać w nowej linijce na środku, to bardzo ważne bo ma być jak najbardziej przejrzyście.
-   - KOD PYTHON: Skrypt wykonujący obliczenia dla tego etapu. Zakaz liczenia w pamięci.
-   - INTERPRETACJA: Krótki komentarz do uzyskanego wyniku.
-3. ZAKAZ LICZENIA W PAMIĘCI: Wszystkie operacje arytmetyczne, zamiana jednostek, wyciąganie pierwiastków, muszą być wykonane w bloku kodu Python.
-4. PODSUMOWANIE: Na koniec przedstaw ostateczny wynik z poprawną jednostką i liczbą cyfr znaczących. Sprawdź, czy wynik ma sens fizyczny.
-
-# FOCUS ON STUDENT NEEDS
-- Używaj analogii, aby wyjaśnić abstrakcyjne pojęcia.
-- Zwracaj uwagę na jednostki (np. przypominaj o zamianie cm na m).
-- Chwal ucznia za poprawne myślenie i motywuj do dalszej pracy.
-- Jeśli uczeń popełni błąd, nie podawaj poprawnej odpowiedzi od razu – naprowadź go pytaniem.
-
-# PYTHON STYLE GUIDELINES
-- Kod musi być zgodny z PEP 8.
-- Nazwy zmiennych muszą być opisowe i odnosić się do wielkości fizycznych (np. masa_kuli, czas_spadku).
-- Dodawaj komentarze w kodzie wyjaśniające kroki obliczeniowe.
-    """
+    # Przetwarzanie obrazu
+    img_obj = None
+    if uploaded_file:
+        img_obj = Image.open(uploaded_file)
     
-    parts = [system_prompt]
-    if text: parts.append(f"Zadanie: {text}")
-    if img: parts.append(img)
+    # Zapisz wiadomość użytkownika w historii UI
+    st.session_state.messages.append({"role": "user", "content": user_text, "image": img_obj})
     
-    return model.generate_content(parts).text
+    with st.chat_message("user"):
+        if img_obj:
+            st.image(img_obj, width=300)
+        st.markdown(user_text)
 
-# --- FUNKCJA WYKONUJĄCA KOD (Z PAMIĘCIĄ) ---
-def execute_step(code_str, global_vars):
-    output_capture = io.StringIO()
-    sys.stdout = output_capture
-    
-    try:
-        # Używamy global_vars jako pamięci podręcznej między krokami!
-        exec(code_str, global_vars)
-        result = output_capture.getvalue().strip()
-        return result, True
-    except Exception as e:
-        return f"Błąd w kodzie: {e}", False
-    finally:
-        sys.stdout = sys.__stdout__
-
-# --- INTERFEJS ---
-col1, col2 = st.columns([1, 1])
-with col1:
-    text_input = st.text_area("Treść zadania:", height=150)
-with col2:
-    file = st.file_uploader("Zdjęcie:", type=["jpg", "png", "jpeg"])
-
-if st.button("🚀 Rozwiąż Kaskadowo", type="primary"):
-    if not api_key:
-        st.error("Brak klucza API!")
-    else:
-        with st.spinner("Liczenie krok po kroku..."):
+    # Wysłanie zapytania do Gemini
+    with st.chat_message("assistant"):
+        with st.spinner("Analiza protokołów i generowanie schematów..."):
             try:
-                img = Image.open(file) if file else None
-                full_response = get_gemini_response(text_input, img)
+                # Przygotowanie danych do wysłania
+                content_to_send = [user_text]
+                if img_obj:
+                    content_to_send.append(img_obj)
                 
-                # --- [MAGIA] ROZBIJANIE NA KAWAŁKI ---
-                # Dzielimy odpowiedź po znacznikach ```python ... ```
-                # Używamy regex, żeby wyłapać wszystko
-                parts = re.split(r"```python(.*?)```", full_response, flags=re.DOTALL)
+                # Oczekiwanie na odpowiedź ze strumieniowaniem
+                response = st.session_state.chat_session.send_message(content_to_send)
+                ai_response = response.text
                 
-                # Tworzymy pamięć dla tej sesji zadania
-                session_memory = {} 
+                render_content(ai_response)
                 
-                # Iterujemy po kawałkach
-                for i, part in enumerate(parts):
-                    if i % 2 == 0:
-                        # Parzyste indeksy (0, 2, 4...) to TEKST od nauczyciela
-                        st.markdown(part)
-                    else:
-                        # Nieparzyste indeksy (1, 3, 5...) to KOD PYTHON
-                        code_to_run = part.strip()
-                        
-                        # Uruchamiamy kod, przekazując mu pamięć (session_memory)
-                        result, success = execute_step(code_to_run, session_memory)
-                        
-                        if success:
-                            # Wyświetlamy wynik obliczeń w ładnym pudełku
-                            if result:
-                                st.markdown(f'<div class="metric-box">🧮 Wynik obliczeń: {result}</div>', unsafe_allow_html=True)
-                        else:
-                            st.error(f"Błąd obliczeń: {result}")
-                            
+                # Zapisz odpowiedź AI w historii UI
+                st.session_state.messages.append({"role": "assistant", "content": ai_response, "image": None})
+                
             except Exception as e:
-                st.error(f"Wystąpił błąd: {e}")
+                st.error(f"⚠️ Problem z połączeniem API: {str(e)}")
